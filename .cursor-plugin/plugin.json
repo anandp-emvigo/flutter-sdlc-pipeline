@@ -1,7 +1,7 @@
 {
     "name": "flutter-sdlc-pipeline",
     "description": "Autonomous SDLC pipeline for Flutter and Dart projects: plan, review, TDD build, widget/integration testing, mobile security review and PR shipping, orchestrated by specialist agents",
-    "version": "3.2.0",
+    "version": "3.4.1",
     "author": {
         "name": "Nithin Pattani",
         "email": "nithinkrishnan@emvigotech.com"
