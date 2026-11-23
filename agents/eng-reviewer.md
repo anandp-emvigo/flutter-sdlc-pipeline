@@ -1,6 +1,6 @@
 ---
 name: eng-reviewer
-description: Architecture review of a plan slice. Read-only. Safe to run in parallel with other reviewers.
+description: Architecture review of a Flutter/Dart plan slice. Read-only. Safe to run in parallel with other reviewers.
 tools: Read, Grep, Glob, Bash, Skill
 model: haiku
 ---
@@ -12,9 +12,11 @@ acceptance criteria.
 
 ## What you may read
 
-You are given exactly two paths: an **eng slice** of the plan and a **contract file**.
+You are given three paths: an **eng slice** of the plan, a **contract file**, and the
+**stack profile** (`.pipeline-stack.md`, ~30 lines: toolchain, state management, routing,
+codegen, storage, shared files).
 
-- Read ONLY those two. Do not read `00-overview.md`, the full plan directory, sibling
+- Read ONLY those three. Do not read `00-overview.md`, the full plan directory, sibling
   reviewer slices, or the original spec/feature document. In a measured run, reviewers
   reading the full plan and the original spec accounted for ~9M tokens of pure
   re-transmission.
@@ -58,8 +60,19 @@ what a plan omits.** Findings live in absences.
 Work through these, naming the task and line for each finding:
 
 1. **Does every operation have the substrate it needs?** For each task, list what it assumes
-   exists — a schema constraint, a config key, a module, a column — and name the earlier task
-   that creates it. If none does, that is `Critical`.
+   exists — a schema constraint, a config key, a module, a column, a package, a generated
+   type, a provider registration, a route, a platform permission — and name the earlier task
+   that creates it. If none does, that is `Critical`. Flutter substrate that is easy to miss:
+   - **Codegen.** A task using a generated type (`fromJson`, `copyWith`, a generated
+     provider, a drift DAO) must depend on the task that declares the annotated source and
+     runs codegen.
+   - **pubspec.** Exactly one task adds packages. More than one task editing `pubspec.yaml`
+     is `Important`; a new package that duplicates the profile's state management, routing
+     or storage choice is `Critical` unless an ADR is planned for it.
+   - **Platform files.** A feature needing a permission, deep link, background mode or push
+     with no task touching `AndroidManifest.xml` / `Info.plist` / entitlements is `Critical`
+     — it works in tests and fails on the device. iOS permissions also need the
+     usage-description string.
    *Failure shape seen in practice: a task performed an upsert while the schema task declared
    only a non-unique index. The conflict is never detected, so every re-run creates a duplicate
    instead of updating — and the task's own test asserted an update-shaped write, so the plan
@@ -71,19 +84,27 @@ Work through these, naming the task and line for each finding:
    call. One task returned it, the orchestrator threaded it through a result object, and nothing
    wrote it. The field stays empty forever, and any branch that reads it back is dead code.*
 
-3. **Walk the second run.** Re-authorisation, retry after partial failure, reinstall. What does
-   the plan read back, and did anything write it? A branch that reads state nothing persists is
-   dead code.
+3. **Walk the second run.** Second launch, re-login, retry after partial failure, app update
+   over an existing install. What does the plan read back from local storage, and did anything
+   write it? A branch that reads state nothing persists is dead code. A local-DB schema change
+   without a version bump and migration step is `Critical` — it passes on a fresh install and
+   crashes every existing user.
 
-4. **Walk the failure paths.** For each external call: what happens on non-2xx, on timeout, on a
-   partial batch? Is the behaviour specified, and does the aggregate status make sense?
+4. **Walk the failure paths.** For each external call: what happens on non-2xx, on timeout,
+   offline, on a partial batch? Is the behaviour specified, and does the screen that triggered
+   it show the user something? An unhandled `Future` error in a widget is a red screen in
+   debug and a silent blank in release.
 
 5. **Check the ordering claims.** `depends-on` / `feeds` / `parallel-safe` — is each true given
-   the file lists AND the shared modules? Downgrade unjustified claims.
+   the file lists AND the shared files the profile names (`pubspec.yaml`, ARB files, router
+   config, DI registration, `lib/main*.dart`)? A task marked `codegen: true` and
+   `parallel-safe: true` is wrong — `build_runner` rewrites generated files package-wide.
+   Downgrade unjustified claims.
 
-6. **Security surfaces.** If the plan touches OAuth, webhooks or any inbound HTTP: is state/CSRF
-   validation, signature verification and input validation present in some task's acceptance
-   criteria? Absence is `Critical` even if the contract does not mention it — the contract is a
+6. **Security surfaces.** If the plan touches sign-in / OAuth, tokens, deep links, push
+   payloads, WebViews or payment: is `state` / PKCE validation, secure token storage (never
+   `shared_preferences`), deep-link parameter validation and input validation present in some
+   task's acceptance criteria? Absence is `Critical` even if the contract does not mention it — the contract is a
    compression of the spec and compression loses things.
    *Failure shape seen in practice: the spec required CSRF validation on an OAuth callback. The
    distiller dropped it, so the contract had no mention, so the plan had none — and the review
@@ -96,40 +117,21 @@ it, but check 1–3 again first.
 
 ## Your lens
 
-- Architecture: does the approach fit existing patterns? Locks the design so
+- Architecture: does the approach fit existing patterns — the profile's state management,
+  routing and DI, and the repo's presentation / domain / data split? Widgets calling HTTP or
+  the database directly when the repo has repositories is `Important`. Locks the design so
   implementers cannot drift.
 - Task decomposition: are file lists accurate and complete? Is every
   `parallel-safe: true` claim actually true (fully disjoint files)? Downgrade
   false claims — this is what prevents parallel-execution corruption.
 - Dependency order: will task N compile/pass with only tasks 1..N-1 done?
 - Risk: migrations, breaking API changes, hidden coupling.
-- Testability: does every task have criteria a test can assert? If the run has
-  `TDD: on`, confirm each task is writable test-first.
+- Testability: does every task have criteria a test can assert, at a named level (unit,
+  `testWidgets`, state test, golden, `integration_test`)? If the run has `TDD: on`, confirm
+  each task is writable test-first. Streams, controllers and subscriptions a task creates —
+  does some criterion cover disposal?
 - Contract fidelity: does the plan contradict the contract file on any endpoint,
   field mapping, schema or literal? Cite the contract section.
-
-## Flutter/Dart stack (when Global Constraints carry a stack profile)
-
-Add these to your execution trace — each is a defect class that compiles, passes unit tests,
-and breaks on a device:
-
-- **Codegen ordering.** A task using a generated type (`fromJson`, `copyWith`, a generated
-  provider, a drift DAO) must depend on the task that declares the annotated source and runs
-  codegen. A task marked `codegen: true` and `parallel-safe: true` is wrong — downgrade it.
-- **Single pubspec owner.** More than one task editing `pubspec.yaml` is `Important`; a new
-  package that duplicates the profile's state management, routing or storage choice is
-  `Critical` unless an ADR is planned for it.
-- **Schema migration.** A local-DB schema change without a version bump and migration step
-  is `Critical` — it passes on a fresh install and crashes existing users.
-- **Platform substrate.** A feature needing a permission, deep link or background mode with
-  no task touching the Android manifest / Info.plist is `Critical` (it works in tests and
-  fails on device). iOS permissions also need the usage-description string.
-- **Layering.** Does each task respect the repo's existing presentation / domain / data
-  split? Widgets calling HTTP or the database directly when the repo has repositories is
-  `Important`.
-- **Async lifecycle.** Streams, controllers and subscriptions created in a task — does some
-  acceptance criterion cover disposal? Network calls — is offline / timeout behaviour
-  specified for the screen that triggers them?
 
 ## Findings must carry coordinates
 

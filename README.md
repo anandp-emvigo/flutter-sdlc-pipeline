@@ -1,6 +1,8 @@
 # flutter-sdlc-pipeline
 
-An autonomous SDLC orchestrator plugin for Claude Code, Claude Cowork, and Cursor. Three commands — `/pipeline`, `/pipeline-parallel` and `/pipeline-all` — take a feature or bug from raw request to shipped PR through planning, review gauntlets, TDD execution, testing gates, security review, docs, and ship.
+An autonomous SDLC orchestrator plugin for **Flutter and Dart apps**, for Claude Code, Claude Cowork, and Cursor. Three commands — `/pipeline`, `/pipeline-parallel` and `/pipeline-all` — take a feature or bug from raw request to shipped PR through planning, review gauntlets, TDD execution, widget and device testing gates, mobile security review, docs, and ship.
+
+This is the Flutter edition of [sdlc-pipeline](https://github.com/nithinemvigo/sdlc-pipeline), which targets web stacks. The pipeline is the same: an orchestrator that never writes code, specialist agents that each lead one part of the work, independent read-only reviewers that verify it, a hard plan-approval gate, and strict context discipline. What changes is that every agent works in Flutter terms from the start — widgets, providers and blocs, codegen, platform files, devices, stores — instead of web instructions with Flutter notes attached. Repos without a `pubspec.yaml` are refused at preflight.
 
 Built on top of **superpowers**, **gstack**, and **claude-mem** — all three are required and must be installed first (see [Prerequisites](#prerequisites)).
 
@@ -12,13 +14,19 @@ Built on top of **superpowers**, **gstack**, and **claude-mem** — all three ar
 | Agents | 20 | Specialist sub-agents: requirements-writer, BA analysts (requirement-analyst, gap-analysis-agent, story-generation-agent), distiller, planner, investigator, implementer, reviewers (code, security, eng, design, CEO), perf-tester, unit-tester, qa-tester, acceptance-verifier, adr-writer, doc-writer, ship-pr |
 | Skills | 9 | BA analysis skills (requirement decomposition, gap identification/prioritisation/triage, story generation/enrichment, acceptance-criteria design, source discovery, quality validation) |
 | Hooks | 2 | Token tracking and per-run token reports |
-| Scripts | 12 | `check_plan.py` plan linter; `detect_stack.py` stack profile (Flutter/Dart); `acceptance-checklist.py`; nine BA analysis scripts (state, gap register, story sync, validators, reports) |
+| Scripts | 12 | `check_plan.py` plan linter; `detect_stack.py` stack profile; `acceptance-checklist.py`; nine BA analysis scripts (state, gap register, story sync, validators, reports) |
 
 The orchestrator never writes production code itself. It classifies your request, dispatches specialist agents, enforces quality gates, and only interrupts you for genuine decisions.
 
 ## Prerequisites
 
-This plugin dispatches skills from three other dependencies. All are **required** — `/pipeline` halts at preflight if any is missing. Install them **before** installing flutter-sdlc-pipeline:
+### Flutter SDK
+
+The pipeline formats, analyzes, tests, profiles and compiles your app, so `flutter` (and `dart`) must be on `PATH` — or `fvm` when the repo pins a version with `.fvmrc`. `/pipeline` halts at preflight otherwise. Check with `flutter doctor`.
+
+A running emulator, simulator, attached device or desktop target lets the QA gate walk scenarios end to end. Without one, the QA gate reports reduced evidence (`widget-level (no device)` or `NO_DEVICE`) and asks you before ship — never a silent pass.
+
+This plugin also dispatches skills from three other plugins (see [Plugin dependencies](#plugin-dependencies)). All are **required** — `/pipeline` halts at preflight if any is missing. Install them **before** installing flutter-sdlc-pipeline.
 
 ### Python 3
 
@@ -112,7 +120,7 @@ Marketplace installs don't auto-pull new commits. To get the latest version:
 ### Example 1 — build a feature
 
 ```
-/pipeline Add CSV export to the reports page
+/pipeline Add pull-to-refresh and an offline banner to the orders screen
 ```
 
 What happens, step by step:
@@ -120,16 +128,16 @@ What happens, step by step:
 1. **Classify** — the orchestrator sizes the request (nano vs full run).
 2. **Preferences** — you're asked three plain-language questions: bug or feature? test-first development? dedicated unit-test round?
 3. **Plan** — the `planner` agent drafts an executable plan using superpowers `brainstorming`/`writing-plans` and gstack `/office-hours`/`/spec`.
-4. **Plan review gauntlet** — `eng-reviewer`, `design-reviewer`, and `ceo-reviewer` review the plan in parallel.
+4. **Plan review gauntlet** — `eng-reviewer` (codegen order, platform files, migrations, layering), `design-reviewer` (theme, states, adaptivity, accessibility), and `ceo-reviewer` (scope, store policy) review the plan in parallel.
 5. **Your approval** — hard gate. No code is written until you approve the plan.
 6. **Execute** — `implementer` agents build each task on a dedicated branch, test-first if you opted in.
-7. **Quality gates** — `unit-tester` audits coverage, `qa-tester` walks acceptance scenarios, then `code-reviewer` and `security-reviewer` (OWASP + STRIDE) run in parallel.
-8. **Docs & ship** — `doc-writer` updates documentation, then `ship-pr` verifies all sign-offs and ships via gstack `/ship`.
+7. **Quality gates** — `unit-tester` runs `flutter test --coverage` and fills unit, widget and state-test gaps on changed lines, `qa-tester` walks acceptance scenarios through `integration_test` on a device, then `code-reviewer` and `security-reviewer` (OWASP MASVS + STRIDE) run in parallel.
+8. **Docs & ship** — `doc-writer` updates documentation, then `ship-pr` verifies all sign-offs, compiles every declared platform, and ships via gstack `/ship`.
 
 ### Example 2 — fix a bug
 
 ```
-/pipeline Login button does nothing after session timeout
+/pipeline Login button does nothing after the app resumes from background on Android
 ```
 
 Bugs skip the planner: the `investigator` agent does root-cause analysis and produces a mini-plan in `docs/bugs/`, then the pipeline proceeds to execution and the same review gates.
@@ -142,40 +150,39 @@ Bugs skip the planner: the `investigator` agent does root-cause analysis and pro
 
 Nano changes skip planning and reviews entirely: `implementer` → `code-reviewer` → `ship-pr`. Fast path, still reviewed.
 
-## Flutter & Dart projects
-
-`/pipeline`, `/pipeline-parallel` and `/pipeline-all` detect a Flutter or Dart repo automatically. Nothing changes for other stacks.
-
-At Stage 0, `scripts/detect_stack.py` reads `pubspec.yaml` and the repo layout and writes a **stack profile** to `.pipeline-stack.md`, which is git-excluded. The profile records the toolchain (including FVM pins), platforms, flavors, state management, routing, codegen, localisation, storage, test setup, the exact format/analyze/codegen/test commands, and which files are never parallel-safe. The planner copies the profile into the plan's Global Constraints, so every implementer gets the right commands without opening the manifest.
-
-What changes on a Flutter/Dart stack:
-
-| Stage | Flutter behaviour |
-|---|---|
-| Preflight (Stage 0) | Halts if `flutter`/`dart` (or `fvm`) is not on `PATH` |
-| Plan | One task owns `pubspec.yaml`; codegen tasks are flagged `codegen: true`; platform files (AndroidManifest, Info.plist) and local-DB migrations are explicit; tests are written as unit, `testWidgets`, golden and `integration_test` cases |
-| Plan lint | Recognises drift, sqflite, Hive, Isar, shared_preferences and secure-storage idioms; flags manifest-editing or codegen tasks marked `parallel-safe: true` |
-| Execute | Runs `pub get`, `build_runner` and `gen-l10n` when needed; never hand-edits generated files; never runs `--update-goldens` just to get a test green |
-| Unit-test gate | Runs `flutter test --coverage` and checks changed-line coverage against `lcov.info` |
-| QA gate | Drives scenarios with `integration_test` on a device, emulator or desktop target, and falls back to widget-level checks (clearly labelled); uses `/browse` only for web targets |
-| Code / security review | Flutter lens (async `BuildContext`, disposal, rebuild cost) plus OWASP MASVS (secrets in the binary, insecure storage, cleartext traffic, deep links, exported components) |
-| Perf gate | Profile-mode frame timings, startup trace and `--analyze-size` instead of web benchmarks |
-| Acceptance gate (`/pipeline-all`, `/verify-acceptance`) | Re-runs only the cited tests with the profile's `flutter test` / `dart test` command; an `integration_test` case with no device is `cannot_verify`, never `met` |
-| Ship | Compile-only build for each declared platform before the PR; version stays in `pubspec.yaml` |
-
-Generated Dart files (`*.g.dart`, `*.freezed.dart`, `*.gr.dart`, `*.mocks.dart`, `*.config.dart`, `app_localizations*.dart`) are left out of review diffs.
-
-Requirements: the Flutter SDK (or FVM) on `PATH`. A running emulator, simulator or desktop target lets the QA gate walk scenarios end to end. Without one, the QA gate reports reduced evidence and never a silent pass.
-
 ### Example 4 — start from an idea (requirements first)
 
 ```
-/flutter-sdlc-pipeline:pipeline-all Let sales managers export filtered contact lists as CSV
+/flutter-sdlc-pipeline:pipeline-all Let drivers scan a parcel barcode and mark it delivered, even offline
 ```
 
 `/pipeline-all` is for features only. It first turns your idea (text, or a file path such as `docs/ideas/export.md`) into a requirements document based on the plugin's template, and asks you only about major gaps. You approve the document or ask for changes. A QA step runs next, and from the testing questions onward the run is the same as Example 1.
 
 The requirements agent asks you only about major gaps (purpose, users, scope, main flow, security, other systems it connects to), then writes `docs/features/<slug>.requirements.md` from the plugin's template for you to approve or change. A feature that is genuinely too big for one run is split — only after you approve the split — into a few independent parts in `docs/features/<slug>/`, each complete on its own; each run builds one part, and once that PR is merged and deployed you run the next part with the command the run gives you. Next, the BA requirements analysis (Stage Q) breaks the approved requirements into atomic requirements, finds and ranks gaps, asks you about each gap (every Critical and High gap must be answered), and writes development stories with acceptance criteria: lean stories are appended to the requirements file, and the detailed stories (full acceptance criteria, edge cases, test data) go to `ba/<name>/stories/detailed_stories.md`, with an HTML report under `docs/features/.../ba/<name>/report/`. If you pause, run the same command again to resume. The planner then builds from the requirements and the detailed stories. Before the PR, an acceptance gate (Stage 5.85, the `acceptance-verifier` agent) checks that every acceptance criterion in the stories is proven by the build; you can also run it on its own with `/flutter-sdlc-pipeline:verify-acceptance <requirements file>`. BA folders created by an earlier plugin version (BA v0.5.1) are reconciled automatically on the next Stage Q run.
+
+## How Flutter shapes each stage
+
+At preflight, `scripts/detect_stack.py` reads `pubspec.yaml` and the repo layout and writes a **stack profile** to `.pipeline-stack.md` (git-excluded): toolchain (including FVM pins), platforms, flavors, state management, routing, codegen, localisation, storage, test setup, the exact format / analyze / codegen / test commands, and the files that are never parallel-safe. The profile travels by path with every dispatch, and the planner copies it into the plan's Global Constraints, so no agent ever opens `pubspec.yaml` to learn the toolchain. An empty repo gets a `greenfield` profile and a scaffolding Task 1 (`flutter create`).
+
+| Stage | Agent | What it does in a Flutter app |
+|---|---|---|
+| Preflight | orchestrator | Halts without `flutter`/`dart` (or `fvm`) on `PATH`, or without a `pubspec.yaml` |
+| Distil | `distiller` | Contract carries Screens (route, required states) and Platform capabilities tables beside the APIs the app calls |
+| Plan | `planner` | Exports in Dart terms (classes, providers/blocs with state types, widget constructors, routes, sealed failures); tests named by level (unit, `testWidgets`, `bloc_test`/`ProviderContainer`, golden, `integration_test`); one task owns `pubspec.yaml`; `codegen: true` tasks; platform files and local-DB migrations explicit |
+| Plan lint | `check_plan.py` | Knows drift, sqflite, Hive, Isar, ObjectBox, `shared_preferences` and secure-storage idioms; flags manifest-editing or codegen tasks marked `parallel-safe: true` |
+| Plan review | `eng-reviewer` | Traces codegen ordering, platform substrate, schema migrations on existing installs, offline/failure paths, layering |
+| | `design-reviewer` | Judges against the app's theme code, Material/Cupertino idiom, loading/empty/error/offline states, small screens, text scaling, `Semantics` |
+| | `ceo-reviewer` | Scope plus store policy (permissions, payments, account deletion) and platform coverage |
+| Execute | `implementer` | Runs `pub get`, `build_runner` and `gen-l10n` when needed; uses the repo's pump harness; never hand-edits generated files; never runs `--update-goldens` to get green |
+| Unit-test gate | `unit-tester` | `flutter test --coverage`, changed lines checked against `lcov.info` |
+| QA gate | `qa-tester` | `integration_test` scenarios on a device, emulator or desktop target, plus small-screen, large-text, back-gesture, offline and resume probes; falls back to clearly labelled widget-level checks |
+| Code review | `code-reviewer` | Async `BuildContext`, disposal, rebuild cost, layout overflow, error/loading states, theme and l10n discipline |
+| Security review | `security-reviewer` | OWASP MASVS + STRIDE: secrets in the binary, insecure storage, cleartext traffic, deep links, WebViews, exported components, permissions |
+| Perf gate | `perf-tester` | Profile-mode frame timings, startup trace, `--analyze-size` |
+| Acceptance gate | `acceptance-verifier` | Re-runs only the cited tests with the profile's command; an `integration_test` case with no device is `cannot_verify`, never `met` |
+| Ship | `ship-pr` | Compile-only build per declared platform before the PR; version stays in `pubspec.yaml`; new permissions and platform-config changes called out in the PR |
+
+Generated Dart files (`*.g.dart`, `*.freezed.dart`, `*.gr.dart`, `*.mocks.dart`, `*.config.dart`, `app_localizations*.dart`) are left out of review diffs. Golden images stay in, so reviewers see visual changes.
 
 ## Workflow
 
@@ -195,12 +202,12 @@ Stage 0.5  Your preferences: bug/feature, TDD, unit tests │
    │                                                      │
    ▼                                                      │
 Stage 3    Execute on dedicated branch (TDD if on) ◄──────┘
-Stage 4    Unit-test gate (if opted in)
-Stage 4.5  QA scenario gate (if user-facing)
-Stage 5    Code review ∥ Security review (OWASP + STRIDE)
-Stage 5.5  Performance gate (only if perf-sensitive)
+Stage 4    Unit/widget test gate (if opted in)
+Stage 4.5  Device QA gate (if user-facing)
+Stage 5    Code review ∥ Security review (OWASP MASVS + STRIDE)
+Stage 5.5  Performance gate (only if perf-sensitive; profile mode)
 Stage 5.8  Documentation
-Stage 6    Ship PR (via gstack /ship)
+Stage 6    Compile every platform, ship PR (via gstack /ship)
 ```
 
 `∥` = stages run in parallel. Token usage is tracked per run by the bundled hooks.
@@ -211,7 +218,7 @@ Stage 6    Ship PR (via gstack /ship)
 idea (text and/or files)
    │
    ▼
-Stage -1   Preflight
+Stage -1   Preflight (dependencies, Flutter SDK, stack profile)
 Stage 0    Bug guard (bugs → /pipeline)
 Stage R    Requirements (requirements-writer) ── ★ YOU APPROVE THE REQUIREMENTS ★
 Stage Q    BA analysis (ba-run): atomic requirements → gaps → triage with you → stories
@@ -227,6 +234,7 @@ Stage 6    Ship PR (via gstack /ship)
 - No production code before you approve the plan (Stage 2.5 is a hard gate).
 - The orchestrator never writes code — only specialist agents do.
 - Reviewers are read-only and report-only; they never "fix things while they're in there".
+- No device is never a pass: missing device evidence is reported and needs your decision before ship.
 - Implementers run one at a time (they share the working tree); reviewers run in parallel.
 
 ## License

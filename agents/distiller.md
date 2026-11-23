@@ -44,10 +44,12 @@ The cap is enforced by **construction, not inspection**. Per section, do not exc
 | Section | Limit |
 |---|---|
 | Sequence | 12 numbered lines |
+| Screens | 20 table rows |
+| Platform capabilities | 10 table rows |
 | Endpoints | 20 table rows |
 | Field mappings | 30 table rows |
 | Schemas | 4 tables, 12 rows each |
-| Env vars | 12 rows |
+| Config keys | 12 rows |
 | Hard constraints | 12 bullets, one line each |
 | Gotchas | 10 bullets, one line each |
 | UNCONFIRMED | no limit — never truncate this |
@@ -58,18 +60,30 @@ Every entry is one line — no prose, no sub-bullets, no rationale.
 
 ## What goes in
 
-- **Endpoints** — method, exact path, exact casing, auth requirement. Casing matters;
-  reproduce it character-for-character and flag any inconsistency in the source.
-- **Field mappings** — `source_field -> target_field`, one per line, in a table.
-- **Schemas** — table/collection names, column names, types, nullability, keys.
-- **Env vars & secrets** — names only, plus whether the name is confirmed or proposed.
+- **Screens** — screen → route path and parameters → states it must show (loading,
+  empty, error, data, offline) → data source. A Flutter app is screen-driven; this table is
+  what the planner turns into widget tasks.
+- **Platform capabilities** — permission / deep link / background mode / push / native
+  integration → platform (Android, iOS, web, desktop) → why. Include target platforms and
+  minimum OS versions when the source states them.
+- **Endpoints** — the APIs the app calls: method, exact path, exact casing, auth
+  requirement. Casing matters; reproduce it character-for-character and flag any
+  inconsistency in the source.
+- **Field mappings** — `source_field -> target_field`, one per line, in a table (JSON
+  field names to Dart model fields when the source gives them).
+- **Schemas** — API payload shapes and local storage (drift / sqflite tables, Hive boxes,
+  secure-storage keys): names, types, nullability, keys.
+- **Config keys & secrets** — names only, whether the name is confirmed or proposed, and
+  whether the value is a secret (a secret cannot ship in the app binary).
 - **Sequencing** — the fixed order of operations, as a numbered list.
 - **Hard constraints** — things that must not change, exact literals, prefix-vs-exact
   match rules, out-of-scope boundaries.
 - **Gotchas** — anything the source calls out as a trap.
-- **Security & validation requirements** — MANDATORY section, never omitted. CSRF / `state`
-  validation, signature verification, input validation and sanitisation, secret handling,
-  replay protection, rate limiting, encryption at rest or in transit. Copy the requirement even
+- **Security & validation requirements** — MANDATORY section, never omitted. Token storage
+  (secure storage vs preferences), secrets that must not ship in the binary, certificate
+  pinning, OAuth / PKCE `state` validation, deep-link validation, input validation,
+  biometric or session-timeout rules, encryption at rest or in transit, data that must not
+  be logged or cached. Copy the requirement even
   if it reads like implementation detail: downstream agents are forbidden from reading the
   original, so anything you leave out cannot be recovered. In a measured run the spec's CSRF
   requirement was dropped here and the resulting plan had no CSRF protection at all.
@@ -78,12 +92,6 @@ Every entry is one line — no prose, no sub-bullets, no rationale.
   if empty (write `None`).
 - **Section index** — a short map from contract heading to the original document's
   section number, so an agent can cite `§4.5` without reading the original.
-
-- **Mobile specs (Flutter or any app):** when the source is screen-driven rather than
-  endpoint-driven, add a `## Screens` table (screen → route → states it must show → data
-  source; 20 rows max) and a `## Platform capabilities` table (permission / deep link /
-  background mode → platform → why; 10 rows max). Keep `## Endpoints` for the APIs the app
-  calls.
 
 ## What stays out
 
@@ -98,10 +106,18 @@ Every entry is one line — no prose, no sub-bullets, no rationale.
 ```markdown
 # <Title> — Contract
 > Distilled from `<source>` on <date>. Downstream agents: read THIS, not the source.
-> Section index: Endpoints=§2-§5 · Schemas=§6 · Product setup=§8 · Sequence=§10
+> Section index: Screens=§2-§4 · Endpoints=§5 · Storage=§6 · Sequence=§8
 
 ## Sequence (fixed order)
 1. ...
+
+## Screens
+| Screen | Route + params | States it must show | Data source |
+|---|---|---|---|
+
+## Platform capabilities
+| Capability | Platforms | Why |
+|---|---|---|
 
 ## Endpoints
 | Method | Path | Auth | Notes |
@@ -116,8 +132,8 @@ Every entry is one line — no prose, no sub-bullets, no rationale.
 | Column | Type | Null | Notes |
 |---|---|---|---|
 
-## Env vars
-| Name | Confirmed? | Purpose |
+## Config keys (`--dart-define` / env package)
+| Name | Confirmed? | Secret? (must stay server-side) | Purpose |
 |---|---|---|
 
 ## Hard constraints
