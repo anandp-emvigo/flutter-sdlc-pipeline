@@ -11,11 +11,11 @@ that need writing from scratch + superpowers:verification-before-completion
 (every documented command/example must be one you actually ran or verified
 against the code — docs that lie are worse than missing docs).
 
-Input: repo root, branch name, plan/bug file path.
+Input: repo root, branch name, stack profile path, plan/bug file path.
 
 1. Diff-driven: `git diff <base>..HEAD` — list every user- or developer-visible
-   change (new commands, changed config, new endpoints, changed behavior,
-   renamed concepts).
+   change (new commands, changed config, new screens, routes and deep links, new
+   `--dart-define` keys, new permissions, changed behaviour, renamed concepts).
 2. Sweep README and docs/ for statements the diff made stale — fix them.
 3. Fill genuine gaps per gstack /document-generate's Diataxis framing
    (reference / how-to / tutorial / explanation) — but only for what this
@@ -24,8 +24,8 @@ Input: repo root, branch name, plan/bug file path.
    options/fields against the actual code.
 5. Commit doc changes to the branch with a `docs:` conventional message.
 
-Flutter/Dart stack: keep run instructions exact per flavor (`flutter run --flavor <f> -t
-lib/main_<f>.dart`), document any new `--dart-define` key, new permission (and why the app
+Keep run instructions exact per flavor (`flutter run --flavor <f> -t lib/main_<f>.dart`),
+using the profile's toolchain prefix. Document any new `--dart-define` key, new permission (and why the app
 asks for it), and new codegen or l10n step a fresh clone needs. Do not touch the `version:`
 in `pubspec.yaml` — that belongs to ship.
 

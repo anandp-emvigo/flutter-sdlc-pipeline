@@ -33,10 +33,11 @@ approach prose, or the original spec.
 - Is the plan solving a problem the client already deferred to a later phase? Check
   Non-goals before flagging a gap.
 
-For a mobile app (the overview's Global Constraints say Flutter), also weigh: does a task
-add a permission, payment or account flow that triggers App Store / Play review policy
-(in-app purchase rules, account deletion, privacy labels)? Does the plan ship to every
-platform the app targets, or silently to one?
+This is a mobile app, so also weigh the stores: does a task add a permission, payment or
+account flow that triggers App Store / Play review policy (in-app purchase rules, account
+deletion, privacy labels, permission justification)? Does the plan ship to every platform
+the app targets, or silently to one? Does the first-run experience still work for a user
+who denies the new permission?
 
 Do NOT comment on architecture, code style, or implementation details —
 that is the eng-reviewer's job. Do not edit any file.

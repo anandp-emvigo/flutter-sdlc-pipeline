@@ -1,5 +1,5 @@
 ---
-description: End-to-end feature/bug pipeline. Ask type + testing prefs → Plan (features) or Investigate (bugs) → reviews → CLIENT APPROVES PLAN → Execute (TDD if requested) → Unit test → QA → Code+Security review → Docs → Ship PR.
+description: Flutter/Dart end-to-end feature/bug pipeline. Ask type + testing prefs → Plan (features) or Investigate (bugs) → reviews → CLIENT APPROVES PLAN → Execute (TDD if requested) → Unit/widget tests → Device QA → Code+Security review → Docs → Ship PR.
 argument-hint: <feature or bug description>
 ---
 
@@ -26,10 +26,15 @@ Rationale and measurements: `CONTEXT-DISCIPLINE.md`. Do not read it — these ar
    context. Announce stage transitions in one line, attached to the turn that does the
    work. No summaries between stages, no play-by-play, no restating what an agent
    returned.
+7. **The stack profile travels by path.** `.pipeline-stack.md` (~30 lines) goes with
+   every dispatch except the ceo-reviewer's. It is the one document every agent may read,
+   and the reason no agent ever opens `pubspec.yaml` to learn the toolchain. The planner
+   copies it verbatim into Global Constraints, which is how implementers receive it.
 
 ## Stage -1 — Preflight (ALWAYS FIRST)
 
-Three REQUIRED dependencies. Check all three before any classification or dispatch.
+Three REQUIRED dependencies and the Flutter toolchain. Check all four before any
+classification or dispatch.
 
 **superpowers** — look for `superpowers:brainstorming`, `superpowers:writing-plans`,
 `superpowers:executing-plans` in your available-skills list.
@@ -58,43 +63,47 @@ injected at session start and persists after the plugin is disabled.
 If `1H` is unset, print exactly this line once and continue:
 `⚠️ 5-minute prompt cache active. Set ENABLE_PROMPT_CACHING_1H=1 and restart for ~25% lower cost.`
 
+**Flutter toolchain + stack profile** — this plugin builds Flutter and Dart apps only. One
+Bash call; you never open `pubspec.yaml` or any other manifest yourself — the script reads
+them and writes a block you hold unread:
+
+```bash
+STACK_PATH="${CLAUDE_PLUGIN_ROOT:-${PLUGIN_ROOT}}/scripts/detect_stack.py"
+python3 "$STACK_PATH" . > .pipeline-stack.md 2>/dev/null || echo "STACK: error" > .pipeline-stack.md
+grep -qx '.pipeline-stack.md' .git/info/exclude 2>/dev/null || echo '.pipeline-stack.md' >> .git/info/exclude
+head -2 .pipeline-stack.md
+T=$(grep -q 'fvm flutter' .pipeline-stack.md && echo "fvm flutter" || echo flutter)
+grep -q '^STACK: dart' .pipeline-stack.md && T="${T%flutter}dart"
+command -v "${T%% *}" >/dev/null && $T --version 2>&1 | head -1 || echo "TOOLCHAIN_MISSING: $T"
+```
+
+- `STACK: flutter | dart` → pass. Record `stack:` in the ledger.
+- `STACK: greenfield` → pass. The planner's Task 1 scaffolds the app; Stage 3 refreshes the
+  profile after it.
+- `STACK: unsupported` or `STACK: error` → HALT. Say in one line that this is the Flutter
+  edition of the pipeline and the repo root has no `pubspec.yaml` (name the manifest the
+  script found); a web or backend repo belongs to `sdlc-pipeline`.
+- `TOOLCHAIN_MISSING` (or a version line that is an error) → HALT. The SDK must be on `PATH`
+  (`flutter doctor` to diagnose; `fvm install` if the repo pins a version). Nothing in the
+  build, test, QA or ship stages can run without it.
+
+`.pipeline-stack.md` is the **stack profile**: toolchain, platforms, flavors, state
+management, routing, codegen, localisation, storage, test setup, the exact format / analyze
+/ codegen / test commands, and the files that are never parallel-safe. The call above keeps it
+out of git; never commit it.
+
 **On any dependency missing or disabled: HALT.** Do not degrade, do not substitute, do
 not dispatch. Read `PREFLIGHT-REPORT.md` and emit it filled in for the failing
 dependencies only. Plugin toggles need a session restart to take effect — say so.
 
-If all three pass, show nothing and continue silently.
+If all four pass, show nothing and continue silently.
 
 ## Stage 0 — Classify
-
-**Detect the stack — one Bash call, before tiering.** You never open `pubspec.yaml` or any
-other manifest yourself; the script does it and prints a block you hold unread:
-
-```bash
-STACK_PATH="${CLAUDE_PLUGIN_ROOT:-${PLUGIN_ROOT}}/scripts/detect_stack.py"
-python3 "$STACK_PATH" . > .pipeline-stack.md 2>/dev/null || echo "STACK: generic" > .pipeline-stack.md
-grep -qx '.pipeline-stack.md' .git/info/exclude 2>/dev/null || echo '.pipeline-stack.md' >> .git/info/exclude
-head -1 .pipeline-stack.md
-if grep -q '^STACK: \(flutter\|dart\)' .pipeline-stack.md; then
-  T=$(grep -q 'fvm flutter' .pipeline-stack.md && echo "fvm flutter" || echo flutter)
-  grep -q '^STACK: dart' .pipeline-stack.md && T=$(echo "$T" | sed 's/flutter/dart/')
-  command -v "${T%% *}" >/dev/null && $T --version 2>&1 | head -1 || echo "TOOLCHAIN_MISSING: $T"
-fi
-```
-
-- `STACK: generic` → nothing changes; ignore every "Flutter/Dart stack" note below.
-- `STACK: flutter|dart` → record `stack:` in the ledger. `TOOLCHAIN_MISSING` (or a
-  version line that is an error) → HALT and tell the client the SDK must be on `PATH`
-  (`flutter doctor` to diagnose; `fvm install` if the repo pins a version). Nothing in the
-  build, test or QA stages can run without it.
-- `.pipeline-stack.md` is the **stack profile**. Pass its *path* to the `planner` and
-  `investigator`; the planner copies it verbatim into Global Constraints, which is how every
-  implementer receives the exact toolchain commands. The call above adds it to
-  `.git/info/exclude`; never commit it.
 
 Read the request and pick a tier:
 - **nano** — typo, copy change, config tweak, one-liner. Skip Stages 1–2:
   `implementer` → `code-reviewer` only → `ship-pr`. Nano has no plan and so no Global
-  Constraints: on a Flutter/Dart stack, pass the implementer the stack profile path instead.
+  Constraints: pass the implementer the stack profile path instead.
 - Everything else → the client confirms bug vs feature in Stage 0.5.
 Announce the tier in one line, on the same turn as the Stage 0.5 question.
 
@@ -199,7 +208,7 @@ the `planner` in targeted mode as a numbered list:
 HOOK_PATH="${CLAUDE_PLUGIN_ROOT:-${PLUGIN_ROOT}}/scripts/check_plan.py"
 if [ -f "$HOOK_PATH" ]; then
   echo "Running plan linter: $HOOK_PATH"
-  python "$HOOK_PATH" docs/plans/<slug> \
+  python3 "$HOOK_PATH" docs/plans/<slug> \
       docs/features/<slug>.contract.md \
       docs/features/<original-spec>.md
 else
@@ -208,9 +217,10 @@ fi
 ```
 
 Exit 0 = clean, exit 1 = findings printed, exit 2 = the lint could not run (**not** a pass —
-fix the paths). Stack-agnostic: it detects idioms by class (SQL, ORM, ODM, key-value, Prisma, Mongoose) and
-contains no project, table, vendor or framework names. Validated against MySQL, MongoDB, Prisma
-and no-database plans; clean on well-formed plans in each. Tune per repo with an optional
+fix the paths). It knows Dart's persistence idioms (drift, sqflite, Hive, Isar, ObjectBox,
+`shared_preferences`, secure storage) and flags a task marked `parallel-safe: true` that edits
+`pubspec.yaml` or runs code generation. It contains no project, table or vendor names. Tune per
+repo with an optional
 `.plan-lint.json` (`disable`, `security_terms`, `min_tests_per_task`).
 
 **Completeness check — same call, mechanical, no file reading.** Append this; the output is
@@ -262,9 +272,8 @@ Sequential dispatch costs one extra turn per agent:
 - `design-reviewer` — gstack /plan-design-review, ONLY if `design-slice.md` contains
   tasks. If it says "no design surface", skip it — do not spend a dispatch confirming.
 
-Pass **the slice path and the contract path only** — plus, on a Flutter/Dart stack, the
-stack profile path to `eng-reviewer` and `design-reviewer` (the design slice carries no
-Global Constraints, and both have stack-specific lenses).
+Pass **the slice path, the contract path and the stack profile path only** (ceo-reviewer:
+slice and contract only — product judgement needs no toolchain).
 
 Each returns `APPROVED`, or `CHANGES_REQUIRED` with numbered findings, **each citing task
 file + line range**. A finding without coordinates goes back to the reviewer, not forward
@@ -322,8 +331,11 @@ Governed by **superpowers:executing-plans**; per-task dispatch follows
 **superpowers:subagent-driven-development**. Do NOT use
 **superpowers:using-git-worktrees** — work on a branch in the main checkout.
 
-1. From latest main create `feature/<slug>` · `fix/<slug>` · `hotfix/<slug>`. Verify a
-   clean test baseline first.
+1. From latest main create `feature/<slug>` · `fix/<slug>` · `hotfix/<slug>`. Run `pub get` (and
+   the profile's codegen command when it lists one), then verify a clean test baseline.
+   On a `greenfield` profile there is nothing to verify until Task 1 has scaffolded the app;
+   after Task 1 commits, re-run the Stage -1 detection call and paste the refreshed profile
+   into Global Constraints for every later dispatch.
 2. Record the base commit.
 3. For each task IN ORDER, dispatch a fresh `implementer` with: **the single task file
    path** (`task-NN-<name>.md` — never the plan directory, never `00-overview.md` in
@@ -372,7 +384,8 @@ session window, so waiting inside it buys nothing.
 suite blocks Stage 5 regardless.
 
 `UNIT_TESTS: on` → dispatch `unit-tester` (gstack /qa-only) with repo root, branch, base
-commit, and the stack profile path on a Flutter/Dart stack. It runs the full suite, checks coverage on changed lines, and adds missing tests.
+commit, and the stack profile path. It runs the full suite with coverage, checks the
+changed lines against `lcov.info`, and adds missing unit, widget and state tests.
 Returns PASS or a fix list → fresh `implementer` → re-run. Max 3 loops. Route
 fixes with the **task file path and failing test names only**. Suite output over ~500
 lines goes to a file; pass the path.
@@ -380,16 +393,17 @@ lines goes to a file; pass the path.
 
 ## Stage 4.5 — QA scenario gate (skip if no user-facing surface)
 
-Dispatch `qa-tester` (gstack /qa-only) with repo root, branch, and the **acceptance
-criteria extracted from the task files** — a short list, not the plan directory. It walks
-them as real user scenarios (happy, error, empty, edge) and reports findings without fixing
-anything. Findings → fresh `implementer` → re-run. Max 2 loops.
+Dispatch `qa-tester` (gstack /qa-only discipline) with repo root, branch, the stack profile
+path, and the **acceptance criteria extracted from the task files** — a short list, not the
+plan directory. It walks them as real user scenarios (happy, error, empty, edge, plus the
+mobile edges: small screen, large text, back gesture, offline, resume) through
+`integration_test` drivers on a device, emulator, simulator or desktop target, and reports
+findings without fixing anything. Findings → fresh `implementer` → re-run. Max 2 loops.
 
-Flutter/Dart stack: also pass the stack profile path. gstack /browse only drives a browser,
-so the qa-tester walks scenarios through `integration_test` drivers on a device, emulator or
-desktop target, and uses /browse only when the app has a `web` target. Relay to the client in
-one line, with the Stage 4.9 checkpoint: a `NO_DEVICE` return (not a PASS) or any scenario
-whose evidence is marked `widget-level (no device)`.
+No device is not a pass. Relay to the client in one line, with the Stage 4.9 checkpoint, a
+`NO_DEVICE` return or any scenario whose evidence is marked `widget-level (no device)`; the
+client either starts an emulator and you re-dispatch, or accepts the reduced evidence, which
+you record in the ledger and pass to `ship-pr`.
 
 ## Stage 4.9 — Pre-review checkpoint
 
@@ -408,23 +422,21 @@ Otherwise report tokens spent on the test gates and `AskUserQuestion`:
 Write the review diff to a file, filtering generated content:
 
 ```
-git diff <base>..HEAD -- . ':!*.lock' ':!package-lock.json' ':!yarn.lock' \
-  ':!pnpm-lock.yaml' ':!dist' ':!build' ':!*.min.*' ':!*.map' ':!*.snap' \
-  ':!vendor' ':!node_modules' ':!*.g.dart' ':!*.freezed.dart' ':!*.gr.dart' \
-  ':!*.mocks.dart' ':!*.config.dart' ':!**/app_localizations*.dart' ':!ios/Pods' \
-  ':!.dart_tool' ':!**/GeneratedPluginRegistrant.*' ':!**/generated_plugin*'
+git diff <base>..HEAD -- . ':!pubspec.lock' ':!build' ':!.dart_tool' ':!ios/Pods' \
+  ':!ios/Podfile.lock' ':!macos/Pods' ':!*.g.dart' ':!*.freezed.dart' ':!*.gr.dart' \
+  ':!*.mocks.dart' ':!*.config.dart' ':!**/app_localizations*.dart' \
+  ':!**/GeneratedPluginRegistrant.*' ':!**/generated_plugin*' ':!coverage'
 ```
 
-The Dart/Flutter excludes are codegen output; they are harmless on other stacks. Golden
-images (`**/goldens/*.png`) stay in — a changed golden is a visual change the reviewers
-must see, and it shows as a one-line `Binary files differ`.
+The excludes are codegen and tool output (the stack profile lists the generated globs).
+Golden images (`**/goldens/*.png`) stay in — a changed golden is a visual change the
+reviewers must see, and it shows as a one-line `Binary files differ`.
 
 Dispatch **in a single message**:
 - `code-reviewer` — spec compliance + quality (superpowers:requesting-code-review rubric + gstack /review)
-- `security-reviewer` — OWASP/STRIDE pass (gstack /cso)
-Pass the diff FILE PATH and the relevant task FILE PATHS, plus the stack profile path on a
-Flutter/Dart stack. Never paste contents. Never the
-whole plan directory.
+- `security-reviewer` — OWASP MASVS + STRIDE pass (gstack /cso)
+Pass the diff FILE PATH, the relevant task FILE PATHS and the stack profile path. Never
+paste contents. Never the whole plan directory.
 Both are read-only. Merge by severity. Critical/Important → fix `implementer`, then
 **delta-only re-review**: `git diff <pre-fix>..HEAD` with the same filters, re-run both
 reviewers on the fix diff plus the numbered findings it addresses. Minor → fix in the same
@@ -432,11 +444,9 @@ pass, no re-review. Max 2 loops, then escalate with your recommendation.
 
 ## Stage 5.5 — Performance gate (only if a task is `perf-sensitive: true`)
 
-Dispatch `perf-tester` (gstack /benchmark) to compare main vs branch on the touched
-paths. Regressions → fresh `implementer`. Skip entirely otherwise.
-Flutter/Dart stack: pass the stack profile path — gstack /benchmark is browser-only, so the
-perf-tester measures with profile-mode integration tests, frame timings and app size instead
-(see its Flutter section).
+Dispatch `perf-tester` with the stack profile path to compare main vs branch on the touched
+paths in profile mode — frame timings, startup trace and app size. Emulator numbers are
+indicative only. Regressions → fresh `implementer`. Skip entirely otherwise.
 
 ## Stage 5.8 — Documentation
 
@@ -463,9 +473,9 @@ Dispatch `ship-pr` with repo root + branch, plan/bug file path, review verdicts,
 results, and the TDD/UNIT_TESTS flags for the PR body. It runs gstack /ship ONLY
 (no superpowers skills here — /ship already syncs main, re-runs the suite, pushes,
 and opens the PR).
-Flutter/Dart stack: also pass the stack profile path. Before pushing, ship-pr runs one
-compile-only build per declared platform (see its Flutter section) — a green `flutter test`
-does not prove the app builds, because tests never compile the Android/iOS embedding.
+Also pass the stack profile path. Before pushing, ship-pr runs one compile-only build per
+declared platform — a green `flutter test` does not prove the app builds, because tests never
+compile the Android/iOS embedding, Gradle or CocoaPods.
 
 Report in <10 lines: what shipped, PR link, test summary, anything deferred, final ledger
 line. No play-by-play narration during the run — the client sees stage transitions only
@@ -477,7 +487,7 @@ Update after every stage. Keep it in the ledger, not in prose to the client.
 
 ```
 TOKEN LEDGER
-  stack: <generic | flutter | dart>
+  stack: <flutter | dart | greenfield>
   build_mode: <run to completion | checkpoint | per-task>
   planner_dispatches: N / 4
   reviewer_dispatches: N   implementer_dispatches: N

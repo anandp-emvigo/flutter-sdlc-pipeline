@@ -65,8 +65,20 @@ read the stories from the export JSON only, never from `detailed_stories.md`.
 
 ## Step 3 — Verify
 
-Dispatch `flutter-sdlc-pipeline:acceptance-verifier` (Sonnet) with: `.pipeline-stack.md`
-(only if that file exists at the repo root — a Flutter/Dart stack profile), checklist path
+If `.pipeline-stack.md` is missing at the repo root, create it first with one Bash call (the
+verifier takes its test command and toolchain prefix from it):
+
+```bash
+python3 <PLUGIN_ROOT>/scripts/detect_stack.py . > .pipeline-stack.md
+grep -qx '.pipeline-stack.md' .git/info/exclude 2>/dev/null || echo '.pipeline-stack.md' >> .git/info/exclude
+head -1 .pipeline-stack.md
+```
+
+`STACK: unsupported` or `greenfield` → stop with one line: this command verifies Flutter/Dart
+builds and the repo root has no app to test.
+
+Dispatch `flutter-sdlc-pipeline:acceptance-verifier` (Sonnet) with: the stack profile path
+(`.pipeline-stack.md`), checklist path
 `<acceptance dir>/checklist.json`, verdicts output path `<acceptance dir>/verdicts.json`,
 repo root, branch, base branch, plan directory (`<absolute plan dir>`, or `none`), and "Stage 4 test
 summary and Stage 4.5 QA findings: not available (standalone run)". No re-check IDs.

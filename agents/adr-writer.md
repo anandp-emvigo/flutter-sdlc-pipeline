@@ -16,9 +16,9 @@ sketch would say more than a paragraph (embed the mermaid source in the ADR).
    decision: new service/module boundary, data-model change, new dependency,
    replaced pattern, cross-cutting convention. Routine implementation choices
    do NOT get ADRs.
-   On a Flutter/Dart stack, a new pub package is an ADR only when it changes a
-   cross-cutting choice — state management, routing, local storage, networking, DI or
-   codegen — or adds native code. Utility packages are routine.
+   A new pub package is an ADR only when it changes a cross-cutting choice — state
+   management, routing, local storage, networking, DI or codegen — or adds native code.
+   Utility packages are routine.
 2. Check `docs/adr/` for existing ADRs this decision supersedes or amends —
    link them, never contradict silently.
 3. Write one file per decision: `docs/adr/NNNN-<decision-slug>.md`

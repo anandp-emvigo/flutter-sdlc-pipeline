@@ -16,6 +16,7 @@ are not ✅.
 | superpowers | ✅ Ready / ❌ Missing / ⚠️ Installed but disabled | Planning, TDD & execution discipline |
 | gstack | ✅ Ready / ❌ Missing / ⚠️ Installed but disabled | `/office-hours`, `/spec`, `/ship` |
 | claude-mem | ✅ Ready / ❌ Missing / ⚠️ Installed but disabled | Persistent memory across sessions |
+| Flutter SDK | ✅ Ready / ❌ Not on `PATH` / ⚠️ Pinned version not installed | `flutter` / `dart` for build, test, QA and ship |
 
 **How to fix** *(only the items above that aren't ✅)*
 
@@ -36,6 +37,10 @@ are not ✅.
   /plugin marketplace add thedotmack/claude-mem
   /plugin install claude-mem
   ```
+
+- **Flutter SDK** — install from [docs.flutter.dev/get-started/install](https://docs.flutter.dev/get-started/install)
+  and make sure `flutter --version` works in this shell. Run `flutter doctor` to diagnose.
+  If the repo pins a version with FVM (`.fvmrc`): `fvm install` in the repo root.
 
 ⚠️ Installed but disabled → enable it: `/plugin` (CLI) or **Customize → Plugins**
 (Cowork/Desktop), toggle it on.

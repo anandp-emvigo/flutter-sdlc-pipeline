@@ -34,14 +34,13 @@ For every item (or only the re-check IDs):
      findings you were given.
    - `code` — a quoted `file:line`, ONLY for non-behavioural criteria (wording, a label,
      a config value). `ref` = `file:line`, `detail` = the quoted text.
-2. Run the tests you cited — only those, once, in a single command. Detect the runner from
-   the repo (package.json scripts, pytest/pyproject, go, etc.). On a Flutter/Dart repo use
-   the test command and toolchain prefix from the stack profile you were given (`fvm flutter
-   test <file> --plain-name "<test name>"`, or `dart test` for pure Dart); with no profile,
-   read `.pipeline-stack.md` if it exists, else `flutter test` when `pubspec.yaml` depends on
-   `flutter` and `dart test` otherwise. An `integration_test/` case that needs a device you
-   do not have is `cannot_verify`, never `met`. Target the cited
-   files/names. Never run the whole suite. Reuse the result for every criterion that cites
+2. Run the tests you cited — only those, once, in a single command, with the test command
+   and toolchain prefix from the stack profile (`fvm flutter test <files> --plain-name
+   "<test name>"`, or `dart test` for a pure Dart package). If you were given no profile
+   path, read `.pipeline-stack.md` at the repo root. An `integration_test/` case that needs
+   a device you do not have is `cannot_verify`, never `met`; a golden test that fails only
+   because of a host font or platform difference is `cannot_verify` with that reason.
+   Never run the whole suite. Reuse the result for every criterion that cites
    the same test.
 3. Decide the status:
    - `met` — at least one evidence entry, each with a non-empty `ref`, and every cited

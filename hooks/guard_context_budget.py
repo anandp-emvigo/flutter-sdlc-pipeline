@@ -61,7 +61,7 @@ ALWAYS_ALLOW = [
     "*-slice.md",
     "task-*.md",
     "00-overview.md",
-    "package.json",
+    ".pipeline-stack.md",
     "*.json",
     "*.yml",
     "*.yaml",
@@ -283,9 +283,18 @@ SLICE_PATTERNS = ["*-slice.md", "*-slice-delta.md"]
 # An empty list means "no restriction". Patterns are fnmatch on the basename.
 ROLE_READ_ALLOWLIST = {
     "ceo-reviewer": ["ceo-slice*.md", "*.contract.md"],
-    "eng-reviewer": ["eng-slice*.md", "*.contract.md"],
-    "design-reviewer": ["design-slice*.md", "*.contract.md", "DESIGN_SYSTEM.md"],
+    "eng-reviewer": ["eng-slice*.md", "*.contract.md", ".pipeline-stack.md"],
+    # A Flutter app's design system is its theme code, not a Markdown file.
+    "design-reviewer": ["design-slice*.md", "*.contract.md", ".pipeline-stack.md",
+                        "DESIGN_SYSTEM.md", "*theme*.dart", "*color*.dart", "*colour*.dart",
+                        "*token*.dart", "*spacing*.dart", "*typography*.dart", "*.arb"],
 }
+
+# Rule 6 exception - reviewers that must verify the plan's claims about existing code.
+# The allowlist exists to keep them out of plan files and the original spec (all Markdown);
+# it must not stop the Grep-then-window code check their instructions require. A windowed
+# Read (offset/limit) of a non-Markdown file passes Rule 6 for these roles.
+CODE_WINDOW_ROLES = {"eng-reviewer", "design-reviewer"}
 
 # Where Rule 5 keeps its per-session record of what each agent has already read.
 STATE_DIR = os.path.join(
@@ -377,14 +386,12 @@ def _dump_targets(cmd: str):
 # Targeted runs (a path argument) are always allowed - they are the wanted behaviour.
 FULL_SUITE_RE = re.compile(
     r"\b("
-    r"flutter\s+test|dart\s+test|melos\s+(?:run\s+)?test|very_good\s+test|"
-    r"npm\s+(?:run\s+)?test|yarn\s+test|pnpm\s+test|"
-    r"pytest|go\s+test|cargo\s+test|mvn\s+test|gradle\s+test|jest|vitest|rspec"
+    r"flutter\s+test|dart\s+test|melos\s+(?:run\s+)?test|very_good\s+test|patrol\s+test"
     r")\b",
     re.IGNORECASE,
 )
 # A path-ish argument means the run is scoped, not the whole suite.
-TARGETED_RE = re.compile(r"(?:^|\s)(?:[\w./-]*(?:test|spec)[\w./-]*/|[\w./-]+\.(?:dart|py|js|ts|tsx|go|rs|rb|java))\b")
+TARGETED_RE = re.compile(r"(?:^|\s)(?:[\w./-]*test[\w./-]*/|[\w./-]+\.dart)\b")
 SUITE_EXEMPT = {"qa-tester", "unit-tester"}  # gate roles: verifying the suite IS their job
 
 
@@ -623,7 +630,12 @@ def main() -> None:
 
     # --- Rule 6: reviewers read their own slice and nothing else --------------
     role, allow_list = role_rules(agent_raw)
-    if allow_list and not basename_matches(path, allow_list):
+    code_window = (
+        role in CODE_WINDOW_ROLES
+        and ("offset" in tool_input or "limit" in tool_input)
+        and not path.lower().endswith((".md", ".markdown"))
+    )
+    if allow_list and not code_window and not basename_matches(path, allow_list):
         audit(payload, "deny", "6-role-allowlist", path)
         deny(
             f"BLOCKED by context budget guard: as `{role}` you may read only "
